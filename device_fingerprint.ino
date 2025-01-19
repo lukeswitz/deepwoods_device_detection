@@ -264,13 +264,13 @@ void loop(){
         // Perform WiFi scan
         currentWiFi.clear();
         Serial.println("Starting WiFi scan for 30 seconds...");
-        scanWiFiNetworks(currentWiFi, 2000); // Adjust if you want a real 30s scan
+        scanWiFiNetworks(currentWiFi, 2000); // Example short scan in ms (adjust as you wish)
         Serial.println("WiFi scan completed.");
 
         // Perform BLE scan
         currentBLE.clear();
         Serial.println("Starting BLE scan for 30 seconds...");
-        scanBLEDevices(currentBLE, 2); // Adjust to 30 if you want a real 30s scan
+        scanBLEDevices(currentBLE, 2); // Example short scan in seconds (adjust as you wish)
         Serial.println("BLE scan completed.");
 
         // Update detected devices list and check for new devices
@@ -304,7 +304,7 @@ void handleSetBaseline(bool isLongPress){
         M5.Lcd.clear();
         M5.Lcd.setCursor(0, 10);
         M5.Lcd.setTextColor(TFT_WHITE);
-        M5.Lcd.println("Capturing baseline (60s)...");
+        M5.Lcd.println("Capturing baseline. Scans in progress...");
 
         doublePulse(); // Provide vibration feedback
 
@@ -312,15 +312,73 @@ void handleSetBaseline(bool isLongPress){
         baselineWiFi.clear();
         baselineBLE.clear();
 
-        // Perform WiFi scan
-        Serial.println("Starting baseline WiFi scan for 30 seconds...");
-        scanWiFiNetworks(baselineWiFi, 30000);
-        Serial.println("Baseline WiFi scan completed.");
+        // ------------------------------------------------------------------
+        // COUNTDOWN from 7:00 (420 seconds) in big BLUE font.
+        // We'll decrement after each scanning chunk, because
+        // scanning is blocking and won't let us do second-by-second.
+        int countdownSeconds = 420; // 7 minutes total
 
-        // Perform BLE scan
+        // Helper function to print "MM:SS" in big blue font
+        auto printCountdown = [&](int secs) {
+            // (Optional) Fill the region so the old time is wiped
+            M5.Lcd.fillRect(0, 60, 320, 200, TFT_BLACK);
+
+            int mm = secs / 60;
+            int ss = secs % 60;
+
+            // Big text
+            M5.Lcd.setTextSize(4);
+            M5.Lcd.setTextColor(TFT_BLUE, TFT_BLACK);
+            M5.Lcd.setCursor(60, 100);
+            M5.Lcd.printf("%02d:%02d", mm, ss);
+        };
+
+        // Show initial 7:00
+        printCountdown(countdownSeconds);
+
+        // ------------ SCAN ORDER ------------
+        // 1) BLE for 2 min
+        Serial.println("Starting baseline BLE scan for 2 minutes...");
+        scanBLEDevices(baselineBLE, 120);
+        Serial.println("BLE scan (2 min) completed.");
+        countdownSeconds -= 120;
+        printCountdown(countdownSeconds);
+
+        // 2) WiFi for 2 min
+        Serial.println("Starting baseline WiFi scan for 2 minutes...");
+        scanWiFiNetworks(baselineWiFi, 120000);
+        Serial.println("WiFi scan (2 min) completed.");
+        countdownSeconds -= 120;
+        printCountdown(countdownSeconds);
+
+        // 3) BLE for 1 min
+        Serial.println("Starting baseline BLE scan for 1 minute...");
+        scanBLEDevices(baselineBLE, 60);
+        Serial.println("BLE scan (1 min) completed.");
+        countdownSeconds -= 60;
+        printCountdown(countdownSeconds);
+
+        // 4) WiFi for 1 min
+        Serial.println("Starting baseline WiFi scan for 1 minute...");
+        scanWiFiNetworks(baselineWiFi, 60000);
+        Serial.println("WiFi scan (1 min) completed.");
+        countdownSeconds -= 60;
+        printCountdown(countdownSeconds);
+
+        // 5) BLE for 30 seconds
         Serial.println("Starting baseline BLE scan for 30 seconds...");
         scanBLEDevices(baselineBLE, 30);
-        Serial.println("Baseline BLE scan completed.");
+        Serial.println("BLE scan (30s) completed.");
+        countdownSeconds -= 30;
+        printCountdown(countdownSeconds);
+
+        // 6) WiFi for 30 seconds
+        Serial.println("Starting baseline WiFi scan for 30 seconds...");
+        scanWiFiNetworks(baselineWiFi, 30000);
+        Serial.println("WiFi scan (30s) completed.");
+        countdownSeconds -= 30;
+        printCountdown(countdownSeconds);
+        // ------------------------------------------------------------------
 
         // Mark baseline as set
         baselineSet = true;
