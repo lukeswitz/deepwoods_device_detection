@@ -51,7 +51,7 @@ Deepwoods Device Detection is a security and monitoring project built around the
 
 1. **Clone this repository:**
 ```bash
-git clone https://github.com/yourusername/deepwoods-device-detection.git
+git clone https://github.com/colonelpanichacks/deepwoods-device-detection.git
 ```
 
 2. **Open the project** in your favorite IDE (e.g., **Arduino IDE** or **PlatformIO**).
