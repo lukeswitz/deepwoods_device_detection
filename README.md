@@ -1,5 +1,5 @@
 # Deepwoods Device Detection
-<img src="deepwoods.png" alt="deepwoods">
+<img src="deepwoods.png" alt="deepwoods" style="width:50%; height:50%;">
 Deepwoods Device Detection is a security and monitoring project built around the **XIAO ESP32 C3** and the **Heltec LoRa V3**. The device is designed to perform an initial baseline scan of nearby Bluetooth (BT/BLE) and WiFi devices for 7 minutes upon boot, whitelisting every device detected. After the baseline period, it continuously scans for new devices and sends an alert over UART to Meshtastic if any non-whitelisted device is detected.
 
 ## 🚀 **Overview**
