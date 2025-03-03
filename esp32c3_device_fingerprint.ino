@@ -43,9 +43,9 @@ void scanBLEDevices(std::vector<String> &results, uint32_t durationSec);
 bool isInVector(const std::vector<String> &vec, const String &val);
 
 // ------------ Bluetooth Scanning Callbacks ------------
-class MyAdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
+class MyAdvertisedDeviceCallbacks : public NimBLEScanCallbacks {
 public:
-  void onResult(NimBLEAdvertisedDevice* advertisedDevice) override {
+  void onResult(const NimBLEAdvertisedDevice* advertisedDevice) override {
     // Get MAC address of the detected device and convert it to uppercase
     std::string macAddress = advertisedDevice->getAddress().toString();
     std::transform(macAddress.begin(), macAddress.end(), macAddress.begin(), ::toupper);
@@ -168,7 +168,7 @@ void scanWiFiNetworks(std::vector<String> &results, uint32_t duration_ms) {
 void scanBLEDevices(std::vector<String> &results, uint32_t durationSec) {
   int previousCount = currentBLE.size();
   NimBLEScan *pScan = NimBLEDevice::getScan();
-  pScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
+  pScan->setScanCallbacks(new MyAdvertisedDeviceCallbacks());
   pScan->setActiveScan(true);
   pScan->setInterval(60);
   pScan->setWindow(30);
