@@ -58,8 +58,9 @@ public:
       if (isBaselineScan) {
         Serial.println("Baseline BLE device found: " + addr);
       } else {
-        // After baseline, only send alert over UART if not in baseline
+        // If device not in baseline, report on both USB Serial and UART
         if (!isInVector(baselineBLE, addr)) {
+          Serial.println("Detected non-whitelisted BLE device: " + addr);
           Serial1.println("New device alert: BLE " + addr);
         }
       }
@@ -142,13 +143,14 @@ void scanWiFiNetworks(std::vector<String> &results, uint32_t duration_ms) {
     String bssid = WiFi.BSSIDstr(i);
     if (!isInVector(results, bssid)) {
       results.push_back(bssid);
-      // During baseline, print the BSSID over USB Serial.
       if (isBaselineScan) {
         Serial.println("WiFi BSSID: " + bssid);
-      }
-      // After baseline, only send alert over UART if this network is non-baselined.
-      if (!isBaselineScan && !isInVector(baselineWiFi, bssid)) {
-        Serial1.println("New device alert: WiFi " + bssid);
+      } else {
+        // After baseline, report on both USB Serial and UART if not in baseline
+        if (!isInVector(baselineWiFi, bssid)) {
+          Serial.println("Detected non-whitelisted WiFi device: " + bssid);
+          Serial1.println("New device alert: WiFi " + bssid);
+        }
       }
     }
   }
@@ -171,8 +173,9 @@ void scanBLEDevices(std::vector<String> &results, uint32_t durationSec) {
   pScan->setInterval(60);
   pScan->setWindow(30);
   
-  Serial.printf("Starting BLE scan for %d seconds...\n", durationSec);
   pScan->start(durationSec, false);
+  
+  // Print tally summary only during baseline scanning
   if (isBaselineScan) {
     int newDevices = currentBLE.size() - previousCount;
     Serial.printf("BLE scan summary: %d new devices discovered, %d total unique BLE devices\n",
