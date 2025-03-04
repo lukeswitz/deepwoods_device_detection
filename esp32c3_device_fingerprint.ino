@@ -45,16 +45,15 @@ bool isInVector(const std::vector<String> &vec, const String &val);
 // ------------ Bluetooth Scanning Callbacks ------------
 class MyAdvertisedDeviceCallbacks : public NimBLEScanCallbacks {
 public:
-  void onResult(const NimBLEAdvertisedDevice* advertisedDevice) override {
+  void onResult(const NimBLEAdvertisedDevice *advertisedDevice) override {
     // Get MAC address of the detected device and convert it to uppercase
-    std::string macAddress = advertisedDevice->getAddress().toString();
-    std::transform(macAddress.begin(), macAddress.end(), macAddress.begin(), ::toupper);
-    String addr = String(macAddress.c_str());
-    
+    String addr = advertisedDevice->getAddress().toString().c_str();
+    addr.toUpperCase();
+
     // Add device to currentBLE if not already present
     if (!isInVector(currentBLE, addr)) {
       currentBLE.push_back(addr);
-      
+
       if (isBaselineScan) {
         Serial.println("Baseline BLE device found: " + addr);
       } else {
@@ -70,7 +69,7 @@ public:
 
 // ------------ Setup Function ------------
 void setup() {
-  delay(2000); // Short delay for boot stability
+  delay(2000);  // Short delay for boot stability
 
   // Initialize USB Serial
   Serial.begin(115200);
@@ -91,13 +90,13 @@ void setup() {
 
   isBaselineScan = true;
 
-  // Baseline scan: 7 minutes of consecutive 20-second scans
+  // Baseline scan: 7 minutes of alternating BLE and WiFi scans
   unsigned long scanStartTime = millis();
-  while (millis() - scanStartTime < 600000) {     // 10 minutes
-    scanWiFiNetworks(baselineWiFi, 10000);        // 10-second WiFi scan
-    delay(200);
-    scanBLEDevices(baselineBLE, 20);              // 20-second BLE scan
-    delay(500);
+  while (millis() - scanStartTime < 600000) {  // 10 minutes
+    scanBLEDevices(baselineBLE, 35);           // 35-second BLE scan
+    delay(1000);                               // Ensure radio time separation
+    scanWiFiNetworks(baselineWiFi, 7000);      // 7-second WiFi scan
+    delay(500);                                // Reduce interference
   }
 
   // Set baseline using the collected current values
@@ -112,20 +111,24 @@ void setup() {
 // ------------ Loop Function ------------
 void loop() {
   if (baselineSet) {
+
     // --------- 5-Second BLE Scan ---------
     currentBLE.clear();
     Serial.println("Starting BLE scan for 5 seconds...");
-    scanBLEDevices(currentBLE, 5); // 5-second BLE scan
+    scanBLEDevices(currentBLE, 5);
     Serial.println("BLE scan completed.");
 
-    // --------- 5-Second WiFi Scan ---------
+    // --------- 3-Second WiFi Scan ---------
     currentWiFi.clear();
-    Serial.println("Starting WiFi scan for 5 seconds...");
-    scanWiFiNetworks(currentWiFi, 5000); // 5-second WiFi scan
+    Serial.println("Starting WiFi scan for 3 seconds...");
+    scanWiFiNetworks(currentWiFi, 3000);
     Serial.println("WiFi scan completed.");
+
+    delay(500);
   }
-  delay(3000);  // Delay before next cycle
+  delay(2000);  // Delay before next scan
 }
+
 
 // ------------ Scan WiFi Networks ------------
 void scanWiFiNetworks(std::vector<String> &results, uint32_t duration_ms) {
@@ -134,12 +137,12 @@ void scanWiFiNetworks(std::vector<String> &results, uint32_t duration_ms) {
 
   int previousCount = results.size();
   int n = WiFi.scanNetworks(false, true, false, duration_ms);
-  
+
   if (n == -1) {
     Serial.println("WiFi scan failed.");
     return;
   }
-  
+
   for (int i = 0; i < n; i++) {
     String bssid = WiFi.BSSIDstr(i);
     if (!isInVector(results, bssid)) {
@@ -155,7 +158,7 @@ void scanWiFiNetworks(std::vector<String> &results, uint32_t duration_ms) {
       }
     }
   }
-  
+
   if (isBaselineScan) {
     int newDevices = results.size() - previousCount;
     Serial.printf("WiFi scan summary: %d new devices discovered, %d total unique WiFi networks\n",
@@ -166,23 +169,18 @@ void scanWiFiNetworks(std::vector<String> &results, uint32_t duration_ms) {
 
 // ------------ Scan BLE Devices (Blocking) ------------
 void scanBLEDevices(std::vector<String> &results, uint32_t durationSec) {
-  int previousCount = currentBLE.size();
   NimBLEScan *pScan = NimBLEDevice::getScan();
   pScan->setScanCallbacks(new MyAdvertisedDeviceCallbacks());
   pScan->setFilterPolicy(BLE_HCI_SCAN_FILT_NO_WL);
-  pScan->setActiveScan(true);
+  pScan->setActiveScan(false);
   pScan->setInterval(60);
   pScan->setWindow(30);
-  
   pScan->start(durationSec, false);
-  
-  // Print tally summary only during baseline scanning
-  if (isBaselineScan) {
-    int newDevices = currentBLE.size() - previousCount;
-    Serial.printf("BLE scan summary: %d new devices discovered, %d total unique BLE devices\n",
-                  newDevices, (int)currentBLE.size());
-  }
   pScan->clearResults();
+
+  if (isBaselineScan) {
+    Serial.printf("BLE devices %d\, Scanning...\n", (int)currentBLE.size());
+  }
 }
 
 // ------------ Check if a Value Exists in a Vector ------------
