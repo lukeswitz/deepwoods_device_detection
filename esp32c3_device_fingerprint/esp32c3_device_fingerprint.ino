@@ -93,15 +93,16 @@ void setup() {
 
   // Baseline scan: 7 minutes of consecutive 20-second scans
   unsigned long scanStartTime = millis();
-  while (millis() - scanStartTime < 420000) {  // 7 minutes
-    scanWiFiNetworks(currentWiFi, 20000);     // 20-second WiFi scan
-    scanBLEDevices(baselineBLE, 20);            // 20-second BLE scan
-    delay(1500);                              // Small delay between scans
+  while (millis() - scanStartTime < 420000) {     // 7 minutes
+    scanWiFiNetworks(baselineWiFi, 10000);        // 10-second WiFi scan
+    delay(200);
+    scanBLEDevices(baselineBLE, 20);              // 20-second BLE scan
+    delay(500);
   }
 
   // Set baseline using the collected current values
-  baselineWiFi = currentWiFi;
-  baselineBLE = currentBLE;
+  currentWiFi = baselineWiFi;
+  currentBLE = baselineBLE;
   baselineSet = true;
   isBaselineScan = false;
 
@@ -155,7 +156,6 @@ void scanWiFiNetworks(std::vector<String> &results, uint32_t duration_ms) {
     }
   }
   
-  // Print tally summary only during baseline scanning
   if (isBaselineScan) {
     int newDevices = results.size() - previousCount;
     Serial.printf("WiFi scan summary: %d new devices discovered, %d total unique WiFi networks\n",
@@ -169,6 +169,7 @@ void scanBLEDevices(std::vector<String> &results, uint32_t durationSec) {
   int previousCount = currentBLE.size();
   NimBLEScan *pScan = NimBLEDevice::getScan();
   pScan->setScanCallbacks(new MyAdvertisedDeviceCallbacks());
+  pScan->setFilterPolicy(BLE_HCI_SCAN_FILT_NO_WL);
   pScan->setActiveScan(true);
   pScan->setInterval(60);
   pScan->setWindow(30);
