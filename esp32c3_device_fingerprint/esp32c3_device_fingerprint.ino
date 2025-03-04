@@ -93,7 +93,7 @@ void setup() {
 
   // Baseline scan: 7 minutes of consecutive 20-second scans
   unsigned long scanStartTime = millis();
-  while (millis() - scanStartTime < 420000) {     // 7 minutes
+  while (millis() - scanStartTime < 600000) {     // 10 minutes
     scanWiFiNetworks(baselineWiFi, 10000);        // 10-second WiFi scan
     delay(200);
     scanBLEDevices(baselineBLE, 20);              // 20-second BLE scan
