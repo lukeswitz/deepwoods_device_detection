@@ -42,6 +42,9 @@ void scanWiFiNetworks(std::vector<String> &results, uint32_t duration_ms = 0);
 void scanBLEDevices(std::vector<String> &results, uint32_t durationSec);
 bool isInVector(const std::vector<String> &vec, const String &val);
 
+// ------------ Global pointer for BLE scan results ------------
+std::vector<String>* bleResultVector = nullptr;
+
 // ------------ Bluetooth Scanning Callbacks ------------
 class MyAdvertisedDeviceCallbacks : public NimBLEScanCallbacks {
 public:
@@ -51,9 +54,9 @@ public:
     std::transform(macAddress.begin(), macAddress.end(), macAddress.begin(), ::toupper);
     String addr = String(macAddress.c_str());
     
-    // Add device to currentBLE if not already present
-    if (!isInVector(currentBLE, addr)) {
-      currentBLE.push_back(addr);
+    // Update the vector pointed to by bleResultVector
+    if (bleResultVector && !isInVector(*bleResultVector, addr)) {
+      bleResultVector->push_back(addr);
       
       if (isBaselineScan) {
         Serial.println("Baseline BLE device found: " + addr);
@@ -95,7 +98,7 @@ void setup() {
   unsigned long scanStartTime = millis();
   while (millis() - scanStartTime < 420000) {  // 7 minutes
     scanWiFiNetworks(currentWiFi, 20000);     // 20-second WiFi scan
-    scanBLEDevices(baselineBLE, 20);            // 20-second BLE scan
+    scanBLEDevices(currentBLE, 20);            // 20-second BLE scan
     delay(1500);                              // Small delay between scans
   }
 
@@ -166,7 +169,10 @@ void scanWiFiNetworks(std::vector<String> &results, uint32_t duration_ms) {
 
 // ------------ Scan BLE Devices (Blocking) ------------
 void scanBLEDevices(std::vector<String> &results, uint32_t durationSec) {
-  int previousCount = currentBLE.size();
+  // Point bleResultVector to the vector passed in for this scan
+  bleResultVector = &results;
+  
+  int previousCount = results.size();
   NimBLEScan *pScan = NimBLEDevice::getScan();
   pScan->setScanCallbacks(new MyAdvertisedDeviceCallbacks());
   pScan->setActiveScan(true);
@@ -177,9 +183,9 @@ void scanBLEDevices(std::vector<String> &results, uint32_t durationSec) {
   
   // Print tally summary only during baseline scanning
   if (isBaselineScan) {
-    int newDevices = currentBLE.size() - previousCount;
+    int newDevices = results.size() - previousCount;
     Serial.printf("BLE scan summary: %d new devices discovered, %d total unique BLE devices\n",
-                  newDevices, (int)currentBLE.size());
+                  newDevices, (int)results.size());
   }
   pScan->clearResults();
 }
