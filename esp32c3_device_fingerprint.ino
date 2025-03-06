@@ -94,12 +94,12 @@ void setup() {
 
   isBaselineScan = true;
 
-  // Baseline scan: 7 minutes of consecutive 20-second scans
+  // Baseline scan: 10 minutes of WiFi/BT scans
   unsigned long scanStartTime = millis();
-  while (millis() - scanStartTime < 420000) {  // 7 minutes
-    scanWiFiNetworks(currentWiFi, 20000);     // 20-second WiFi scan
-    scanBLEDevices(currentBLE, 20);            // 20-second BLE scan
-    delay(1500);                              // Small delay between scans
+  while (millis() - scanStartTime < 600000) {   // 10 minutes
+    scanWiFiNetworks(currentWiFi, 20000);       // 20-second WiFi scan
+    scanBLEDevices(currentBLE, 20);             // 20-second BLE scan
+    delay(1500);                                // Small delay between scans
   }
 
   // Set baseline using the collected current values
@@ -175,12 +175,12 @@ void scanBLEDevices(std::vector<String> &results, uint32_t durationSec) {
   int previousCount = results.size();
   NimBLEScan *pScan = NimBLEDevice::getScan();
   pScan->setScanCallbacks(new MyAdvertisedDeviceCallbacks());
-  pScan->setActiveScan(true);
+  pScan->setActiveScan(false);
   pScan->setInterval(60);
   pScan->setWindow(30);
 
   // Start scan and allow it to complete
-  pScan->start(durationSec, false);
+  pScan->start(durationSec, true);
 
   // Wait for callback from BLE scan
   delay(500);  
