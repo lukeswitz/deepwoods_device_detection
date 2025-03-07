@@ -35,6 +35,10 @@ HardwareSerial Serial2(2);
 #define MAX_WHITELIST_SIZE 1500
 #define MAX_ALERTED_SIZE 500
 
+// Rate-limiting
+unsigned long lastSerialSendTime = 0;
+const unsigned long MIN_SEND_INTERVAL = 1000; // milliseconds between sends
+
 // Device Database
 typedef std::unordered_set<String, StringHash, StringEqual> DeviceSet;
 
@@ -46,6 +50,15 @@ DeviceSet alertedBLE;       // BLE devices we've already alerted about
 
 // ------------ Scan State ------------
 bool baselineMode = true;
+
+// ------------ Rate-limited messages ------------
+void sendAlertWithRateLimit(String message) {
+  unsigned long currentTime = millis();
+  if (currentTime - lastSerialSendTime >= MIN_SEND_INTERVAL) {
+    Serial1.println(message);
+    lastSerialSendTime = currentTime;
+  }
+}
 
 // ------------ BLE Scanning Callback ------------
 class BLEScanner : public NimBLEScanCallbacks {
@@ -95,7 +108,7 @@ public:
         if (whitelistedBLE.find(mac) == whitelistedBLE.end() && alertedBLE.find(mac) == alertedBLE.end()) {
           // New non-whitelisted device found!
           Serial.println("Detected non-whitelisted BLE device: " + mac);
-          Serial1.println("New device alert: BLE " + mac);
+          sendAlertWithRateLimit("New device alert: BLE " + mac);
           alertedBLE.insert(mac);
         }
       }
@@ -104,6 +117,7 @@ public:
 };
 
 BLEScanner* BLEScanner::instance = nullptr;
+
 // ------------ Function Declarations ------------
 void scanWiFiDevices(DeviceSet& resultSet, uint32_t durationMs);
 void scanBLEDevices(DeviceSet& resultSet, uint32_t durationSec);
@@ -138,7 +152,7 @@ void setup() {
   while (millis() < endTime) {
     // Alternate between WiFi and BLE scans
     scanWiFiDevices(tempWiFi, 20000);  // 20-second WiFi scan
-    scanBLEDevices(tempBLE, 20);       // 20-second BLE scan
+    scanBLEDevices(tempBLE, 30);       // 20-second BLE scan
     delay(1000);                       // Short delay between scan cycles
   }
 
@@ -208,7 +222,7 @@ void scanWiFiDevices(DeviceSet& resultSet, uint32_t durationMs) {
         if (whitelistedWiFi.find(mac) == whitelistedWiFi.end() && alertedWiFi.find(mac) == alertedWiFi.end()) {
           // New non-whitelisted device found!
           Serial.println("Detected non-whitelisted WiFi device: " + mac);
-          Serial1.println("New device alert: WiFi " + mac);
+          sendAlertWithRateLimit("New device alert: WiFi " + mac);
           alertedWiFi.insert(mac);
         }
       }
