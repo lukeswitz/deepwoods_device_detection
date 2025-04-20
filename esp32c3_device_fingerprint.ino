@@ -5,6 +5,7 @@ fingerprint and detect ble/wifi devices and send detection over serial
 *******************************************************************************
 */
 
+#include <Arduino.h>
 #include <WiFi.h>
 #include <NimBLEDevice.h>
 #include <vector>
@@ -46,9 +47,9 @@ bool isInVector(const std::vector<String> &vec, const String &val);
 std::vector<String>* bleResultVector = nullptr;
 
 // ------------ Bluetooth Scanning Callbacks ------------
-class MyAdvertisedDeviceCallbacks : public NimBLEScanCallbacks {
+class MyAdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
 public:
-  void onResult(const NimBLEAdvertisedDevice* advertisedDevice) override {
+  void onResult(NimBLEAdvertisedDevice* advertisedDevice) override {
     // Get MAC address of the detected device and convert it to uppercase
     std::string macAddress = advertisedDevice->getAddress().toString();
     std::transform(macAddress.begin(), macAddress.end(), macAddress.begin(), ::toupper);
@@ -97,9 +98,13 @@ void setup() {
   // Baseline scan: 7 minutes of consecutive 20-second scans
   unsigned long scanStartTime = millis();
   while (millis() - scanStartTime < 420000) {  // 7 minutes
+    currentWiFi.clear();
+    currentBLE.clear();
+
     scanWiFiNetworks(currentWiFi, 20000);     // 20-second WiFi scan
-    scanBLEDevices(currentBLE, 20);            // 20-second BLE scan
+    scanBLEDevices(currentBLE, 20);           // 20-second BLE scan
     delay(1500);                              // Small delay between scans
+    yield();                                  // keep watchdog happy
   }
 
   // Set baseline using the collected current values
@@ -135,13 +140,15 @@ void scanWiFiNetworks(std::vector<String> &results, uint32_t duration_ms) {
   WiFi.disconnect(true);
 
   int previousCount = results.size();
-  int n = WiFi.scanNetworks(false, true, false, duration_ms);
-  
-  if (n == -1) {
+  int n = (duration_ms>0)
+          ? WiFi.scanNetworks(false, true, false, duration_ms)
+          : WiFi.scanNetworks();
+
+  if (n < 0) {
     Serial.println("WiFi scan failed.");
     return;
   }
-  
+
   for (int i = 0; i < n; i++) {
     String bssid = WiFi.BSSIDstr(i);
     if (!isInVector(results, bssid)) {
@@ -157,7 +164,7 @@ void scanWiFiNetworks(std::vector<String> &results, uint32_t duration_ms) {
       }
     }
   }
-  
+
   // Print tally summary only during baseline scanning
   if (isBaselineScan) {
     int newDevices = results.size() - previousCount;
@@ -171,16 +178,16 @@ void scanWiFiNetworks(std::vector<String> &results, uint32_t duration_ms) {
 void scanBLEDevices(std::vector<String> &results, uint32_t durationSec) {
   // Point bleResultVector to the vector passed in for this scan
   bleResultVector = &results;
-  
+
   int previousCount = results.size();
   NimBLEScan *pScan = NimBLEDevice::getScan();
-  pScan->setScanCallbacks(new MyAdvertisedDeviceCallbacks());
+  pScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
   pScan->setActiveScan(true);
   pScan->setInterval(60);
   pScan->setWindow(30);
-  
+
   pScan->start(durationSec, false);
-  
+
   // Print tally summary only during baseline scanning
   if (isBaselineScan) {
     int newDevices = results.size() - previousCount;
@@ -192,5 +199,5 @@ void scanBLEDevices(std::vector<String> &results, uint32_t durationSec) {
 
 // ------------ Check if a Value Exists in a Vector ------------
 bool isInVector(const std::vector<String> &vec, const String &val) {
-  return (std::find(vec.begin(), vec.end(), val) != vec.end());
+  return std::find(vec.begin(), vec.end(), val) != vec.end();
 }
