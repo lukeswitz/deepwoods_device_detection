@@ -2,8 +2,8 @@
 *******************************************************************************
 fingerprint and detect BLE/Wi‑Fi devices concurrently on separate cores,
 with a 7 minute baseline phase and continuous detection thereafter,
-reporting only non‑baseline detections over USB, plus baseline progress
-counts every 30 s during the baseline.
+reporting only non‑baseline detections over UART1, plus baseline progress
+counts every 30 s during the baseline. USB prints are now atomic writes.
 *******************************************************************************
 */
 
@@ -57,12 +57,14 @@ static void enqueueMsg(const char *s) {
 // ------------ PrintTask (core 0) ------------
 void PrintTask(void*) {
   PrintMsg m;
-  while (true) {
+  for (;;) {
     if (xQueueReceive(printQ, &m, portMAX_DELAY) == pdTRUE) {
       size_t len = strnlen(m.buf, sizeof(m.buf));
+      // Atomic write of the entire line + CRLF
       Serial.write((const uint8_t*)m.buf, len);
-      Serial.write((const uint8_t*)"\r\n", 2);
+      Serial.write("\r\n", 2);
       Serial.flush();
+      // give USB driver a moment
       vTaskDelay(pdMS_TO_TICKS(1));
     }
   }
@@ -75,9 +77,9 @@ std::vector<String>* bleVec = nullptr;
 class MyScanCallbacks : public NimBLEScanCallbacks {
 public:
   void onResult(const NimBLEAdvertisedDevice* dev) override {
-    std::string macStd = dev->getAddress().toString();
-    std::transform(macStd.begin(), macStd.end(), macStd.begin(), ::toupper);
-    String addr(macStd.c_str());
+    std::string mac = dev->getAddress().toString();
+    std::transform(mac.begin(), mac.end(), mac.begin(), ::toupper);
+    String addr(mac.c_str());
     auto &v = *bleVec;
     if (std::find(v.begin(), v.end(), addr) == v.end()) {
       v.push_back(addr);
@@ -161,18 +163,21 @@ void StatusTask(void*) {
 
 // ------------ setup() ------------
 void setup() {
-  delay(5000);  // 5 second boot delay
+  delay(5000);  // 5 second boot delay
   baselineStart = millis();
 
+  // Initialize USB + PrintTask
   Serial.begin(115200);
   while (!Serial) vTaskDelay(pdMS_TO_TICKS(10));
   printQ = xQueueCreate(20, sizeof(PrintMsg));
   xTaskCreatePinnedToCore(PrintTask, "PrintTask", 4096, NULL, 2, NULL, 0);
   enqueueMsg("USB Serial started.");
 
+  // UART1 for alerts
   Serial1.begin(115200, SERIAL_8N1, SERIAL1_RX_PIN, SERIAL1_TX_PIN);
   enqueueMsg("Serial1 started.");
 
+  // BLE init
   NimBLEDevice::init("");
   pBLEScan = NimBLEDevice::getScan();
   pBLEScan->setActiveScan(true);
@@ -182,6 +187,7 @@ void setup() {
   pBLEScan->setScanCallbacks(&cb, false);
   enqueueMsg("NimBLE initialized.");
 
+  // Launch tasks on core 1
   xTaskCreatePinnedToCore(BLETask,    "BLETask",    8192, NULL, 1, NULL, 1);
   xTaskCreatePinnedToCore(WiFiTask,   "WiFiTask",   8192, NULL, 1, NULL, 1);
   xTaskCreatePinnedToCore(StatusTask, "StatusTask", 4096, NULL, 1, NULL, 1);
