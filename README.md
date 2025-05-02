@@ -30,7 +30,7 @@ Deepwoods Device Detection is a security and monitoring project built around the
 
 ## 🛠 **Hardware Requirements**
 
-- **XIAO ESP32 S3:** Serves as the main controller and wireless scanning unit. If you need to use flash a xiao esp32 c3, the binary is in the build folder. 
+- **XIAO ESP32 S3:** Serves as the main controller and wireless scanning unit. If you need to flash a xiao esp32 c3, the binary is in the esp32-c3 folder. 
 - **Heltec LoRa V3:** Provides LoRa connectivity and integrates with the device for Meshtastic alerts.
 - **Additional Components:** Mesh Detect board
 
