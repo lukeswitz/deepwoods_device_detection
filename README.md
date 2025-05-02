@@ -30,7 +30,7 @@ Deepwoods Device Detection is a security and monitoring project built around the
 
 ## 🛠 **Hardware Requirements**
 
-- **XIAO ESP32 C3:** Serves as the main controller and wireless scanning unit.
+- **XIAO ESP32 S3:** Serves as the main controller and wireless scanning unit. If you need to flash a xiao esp32 c3, the binary is in the esp32-c3 Version folder. 
 - **Heltec LoRa V3:** Provides LoRa connectivity and integrates with the device for Meshtastic alerts.
 - **Additional Components:** Mesh Detect board
 
@@ -94,3 +94,7 @@ This project is licensed under the **MIT License**. See the **LICENSE** file for
 
 ### 🎯 **Happy hacking!**
 
+## Order a PCB for this project
+<a href="https://www.tindie.com/stores/colonel_panic/?ref=offsite_badges&utm_source=sellers_colonel_panic&utm_medium=badges&utm_campaign=badge_large">
+    <img src="https://d2ss6ovg47m0r5.cloudfront.net/badges/tindie-larges.png" alt="I sell on Tindie" width="200" height="104">
+</a>
