@@ -2,7 +2,8 @@
 *******************************************************************************
 fingerprint and detect BLE/Wi‑Fi devices concurrently on separate cores,
 with a 7 minute baseline phase and continuous detection thereafter,
-reporting only non‑baseline detections
+reporting only non‑baseline detections over USB, plus baseline progress
+counts every 30 s during the baseline.
 *******************************************************************************
 */
 
@@ -15,6 +16,7 @@ reporting only non‑baseline detections
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
+#include <stdarg.h>
 
 // ================================
 // Pin Definitions
@@ -23,14 +25,17 @@ reporting only non‑baseline detections
 #define SERIAL1_TX_PIN D4
 
 // ------------ Timing & Flags ------------
-static const uint32_t BASELINE_MS = 420000UL;
+static const uint32_t BASELINE_MS = 420000UL; // 7 minutes
 static uint32_t baselineStart = 0;
 static volatile bool isBaseline = true, wifiDone = false, bleDone = false;
+
+// ------------ Baseline Progress Counts ------------
+static volatile size_t currBLECount = 0, currWiFiCount = 0;
 
 // ------------ Baseline Storage ------------
 static std::vector<String> baselineWiFi, baselineBLE;
 
-// ------------ Print Queue ------------
+// ------------ Print Message Queue ------------
 struct PrintMsg { char buf[128]; };
 static QueueHandle_t printQ = nullptr;
 
@@ -43,14 +48,23 @@ static void enqueueFmt(const char *fmt, ...) {
 }
 
 static void enqueueMsg(const char *s) {
-  PrintMsg m; strncpy(m.buf, s, sizeof(m.buf)-1); m.buf[127]=0;
+  PrintMsg m;
+  strncpy(m.buf, s, sizeof(m.buf) - 1);
+  m.buf[sizeof(m.buf) - 1] = '\0';
   xQueueSend(printQ, &m, portMAX_DELAY);
 }
 
-void PrintTask(void*){
+// ------------ PrintTask (core 0) ------------
+void PrintTask(void*) {
   PrintMsg m;
-  while(xQueueReceive(printQ, &m, portMAX_DELAY)==pdTRUE){
-    Serial.println(m.buf);
+  while (true) {
+    if (xQueueReceive(printQ, &m, portMAX_DELAY) == pdTRUE) {
+      size_t len = strnlen(m.buf, sizeof(m.buf));
+      Serial.write((const uint8_t*)m.buf, len);
+      Serial.write((const uint8_t*)"\r\n", 2);
+      Serial.flush();
+      vTaskDelay(pdMS_TO_TICKS(1));
+    }
   }
 }
 
@@ -59,114 +73,123 @@ static NimBLEScan* pBLEScan = nullptr;
 std::vector<String>* bleVec = nullptr;
 
 class MyScanCallbacks : public NimBLEScanCallbacks {
+public:
   void onResult(const NimBLEAdvertisedDevice* dev) override {
-    std::string mac = dev->getAddress().toString();
-    std::transform(mac.begin(), mac.end(), mac.begin(), ::toupper);
-    String addr(mac.c_str());
+    std::string macStd = dev->getAddress().toString();
+    std::transform(macStd.begin(), macStd.end(), macStd.begin(), ::toupper);
+    String addr(macStd.c_str());
     auto &v = *bleVec;
-    if (std::find(v.begin(), v.end(), addr)==v.end()) {
+    if (std::find(v.begin(), v.end(), addr) == v.end()) {
       v.push_back(addr);
-      // **only** non‑baseline
-      if (!isBaseline && std::find(baselineBLE.begin(), baselineBLE.end(), addr)==baselineBLE.end()) {
+      currBLECount = v.size();
+      if (!isBaseline && std::find(baselineBLE.begin(), baselineBLE.end(), addr) == baselineBLE.end()) {
         enqueueFmt("Detected non‑baseline BLE: %s", addr.c_str());
-        enqueueFmt("Alert over UART1: BLE %s", addr.c_str());
         Serial1.println("New device alert: BLE " + addr);
       }
     }
   }
 };
 
-// ------------ BLETask (Core 1) ------------
+// ------------ BLETask (core 1) ------------
 void BLETask(void*) {
   std::vector<String> seen;
-  while(true){
-    // 1 s chunked scan
-    uint32_t w = (1000+999)/1000;
+  while (true) {
     bleVec = &seen;
-    for(uint32_t i=0;i<w;i++){
-      pBLEScan->start(1000,false,true);
-      pBLEScan->clearResults();
-      vTaskDelay(pdMS_TO_TICKS(10));
-    }
-    // baseline complete?
-    if (isBaseline && !bleDone && millis()-baselineStart>=BASELINE_MS) {
+    pBLEScan->start(1000, false, true);
+    pBLEScan->clearResults();
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    if (isBaseline && !bleDone && millis() - baselineStart >= BASELINE_MS) {
       baselineBLE = seen;
       bleDone = true;
-      enqueueFmt("BLE baseline done: %u devs", (unsigned)seen.size());
-      if (wifiDone) { isBaseline=false; enqueueMsg("=== Baseline complete ==="); }
+      enqueueFmt("BLE baseline done: %u devices", (unsigned)seen.size());
+      if (wifiDone) {
+        isBaseline = false;
+        enqueueMsg("=== Baseline complete ===");
+      }
     }
     vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
 
-// ------------ WiFiTask (Core 1) ------------
+// ------------ WiFiTask (core 1) ------------
 void WiFiTask(void*) {
   std::vector<String> seen;
-  while(true){
-    // async 1 s scan
-    WiFi.scanNetworks(true,true,false,1000);
-    unsigned long dl = millis()+1000;
+  while (true) {
+    WiFi.scanNetworks(true, true, false, 1000);
+    unsigned long dl = millis() + 1000;
     int n;
-    while((n=WiFi.scanComplete())<0 && millis()<dl) vTaskDelay(pdMS_TO_TICKS(50));
-    if (n>0) {
-      for(int i=0;i<n;i++){
+    while ((n = WiFi.scanComplete()) < 0 && millis() < dl) {
+      vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    if (n > 0) {
+      for (int i = 0; i < n; i++) {
         String b = WiFi.BSSIDstr(i);
-        if (std::find(seen.begin(),seen.end(),b)==seen.end()){
+        if (std::find(seen.begin(), seen.end(), b) == seen.end()) {
           seen.push_back(b);
-          // only non‑baseline
-          if (!isBaseline && std::find(baselineWiFi.begin(),baselineWiFi.end(),b)==baselineWiFi.end()){
+          currWiFiCount = seen.size();
+          if (!isBaseline && std::find(baselineWiFi.begin(), baselineWiFi.end(), b) == baselineWiFi.end()) {
             enqueueFmt("Detected non‑baseline WiFi: %s", b.c_str());
-            enqueueFmt("Alert over UART1: WiFi %s", b.c_str());
             Serial1.println("New device alert: WiFi " + b);
           }
         }
       }
     }
     WiFi.scanDelete();
-    // baseline complete?
-    if (isBaseline && !wifiDone && millis()-baselineStart>=BASELINE_MS) {
+
+    if (isBaseline && !wifiDone && millis() - baselineStart >= BASELINE_MS) {
       baselineWiFi = seen;
       wifiDone = true;
       enqueueFmt("WiFi baseline done: %u BSSIDs", (unsigned)seen.size());
-      if (bleDone) { isBaseline=false; enqueueMsg("=== Baseline complete ==="); }
+      if (bleDone) {
+        isBaseline = false;
+        enqueueMsg("=== Baseline complete ===");
+      }
     }
     vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
 
+// ------------ StatusTask (core 1) ------------
+void StatusTask(void*) {
+  while (isBaseline) {
+    enqueueFmt("Baseline progress: %u BLE, %u WiFi", (unsigned)currBLECount, (unsigned)currWiFiCount);
+    vTaskDelay(pdMS_TO_TICKS(30000));  // every 30 s
+  }
+  vTaskDelete(NULL);
+}
+
 // ------------ setup() ------------
-void setup(){
-  delay(2000);
+void setup() {
+  delay(5000);  // 5 second boot delay
   baselineStart = millis();
 
-  // USB + PrintTask (core 0)
   Serial.begin(115200);
-  while(!Serial) delay(10);
-  printQ = xQueueCreate(50,sizeof(PrintMsg));
-  xTaskCreatePinnedToCore(PrintTask,"Printer",4096,NULL,2,NULL,0);
-  enqueueMsg("USB ready.");
+  while (!Serial) vTaskDelay(pdMS_TO_TICKS(10));
+  printQ = xQueueCreate(20, sizeof(PrintMsg));
+  xTaskCreatePinnedToCore(PrintTask, "PrintTask", 4096, NULL, 2, NULL, 0);
+  enqueueMsg("USB Serial started.");
 
-  // UART1 alerts
-  Serial1.begin(115200,SERIAL_8N1,SERIAL1_RX_PIN,SERIAL1_TX_PIN);
-  enqueueMsg("UART1 ready.");
+  Serial1.begin(115200, SERIAL_8N1, SERIAL1_RX_PIN, SERIAL1_TX_PIN);
+  enqueueMsg("Serial1 started.");
 
-  // BLE init
   NimBLEDevice::init("");
   pBLEScan = NimBLEDevice::getScan();
   pBLEScan->setActiveScan(true);
   pBLEScan->setInterval(60);
   pBLEScan->setWindow(30);
   static MyScanCallbacks cb;
-  pBLEScan->setScanCallbacks(&cb,false);
-  enqueueMsg("BLE inited.");
+  pBLEScan->setScanCallbacks(&cb, false);
+  enqueueMsg("NimBLE initialized.");
 
-  // launch tasks on core 1
-  xTaskCreatePinnedToCore(BLETask, "BLETask",8192,NULL,1,NULL,1);
-  xTaskCreatePinnedToCore(WiFiTask,"WiFiTask",8192,NULL,1,NULL,1);
-  enqueueMsg("Scanning launched.");
+  xTaskCreatePinnedToCore(BLETask,    "BLETask",    8192, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(WiFiTask,   "WiFiTask",   8192, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(StatusTask, "StatusTask", 4096, NULL, 1, NULL, 1);
+
+  enqueueMsg("Scanning tasks launched (7 min baseline)...");
 }
 
-// ------------ idle loop ------------
-void loop(){
+// ------------ loop() idle ------------
+void loop() {
   vTaskDelay(pdMS_TO_TICKS(1000));
 }
