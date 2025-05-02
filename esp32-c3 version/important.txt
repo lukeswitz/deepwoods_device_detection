@@ -1,0 +1,1 @@
+If you want this file to compile properly in Arduino, you have to use NimBle version 1.4.3. All dev is being moved to the s3 version. 
