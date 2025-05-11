@@ -54,9 +54,9 @@ static int  baselineProbeCount = 0;
 // ------------ Print Queue & Function ------------
 struct PrintMsg { char buf[128]; };
 static QueueHandle_t printQ = nullptr;
-static const char *DETECT_PREFIX = "Detected non-baseline";
+static const char* DETECT_PREFIX = "Detected non-baseline";
 
-static void enqueueFmt(const char *fmt, ...) {
+static void enqueueFmt(const char* fmt, ...) {
   PrintMsg m;
   va_list ap;
   va_start(ap, fmt);
@@ -80,9 +80,8 @@ static void IRAM_ATTR snifferCallback(void* buf, wifi_promiscuous_pkt_type_t typ
   ProbeEvent ev;
   snprintf(ev.mac, sizeof(ev.mac),
            "%02X:%02X:%02X:%02X:%02X:%02X",
-           hdr[10],hdr[11],hdr[12],
-           hdr[13],hdr[14],hdr[15]);
-
+           hdr[10], hdr[11], hdr[12],
+           hdr[13], hdr[14], hdr[15]);
   xQueueSendFromISR(probeQ, &ev, NULL);
 }
 
@@ -92,7 +91,10 @@ void ProbeTask(void*) {
   while (xQueueReceive(probeQ, &ev, portMAX_DELAY)) {
     bool found = false;
     for (int i = 0; i < probeSeenCount; i++) {
-      if (strcmp(probeSeenArr[i], ev.mac) == 0) { found = true; break; }
+      if (strcmp(probeSeenArr[i], ev.mac) == 0) {
+        found = true;
+        break;
+      }
     }
     if (!found && probeSeenCount < MAX_PROBE) {
       strcpy(probeSeenArr[probeSeenCount], ev.mac);
@@ -101,7 +103,10 @@ void ProbeTask(void*) {
       if (!isBaseline) {
         bool inBase = false;
         for (int j = 0; j < baselineProbeCount; j++) {
-          if (strcmp(baselineProbeArr[j], ev.mac) == 0) { inBase = true; break; }
+          if (strcmp(baselineProbeArr[j], ev.mac) == 0) {
+            inBase = true;
+            break;
+          }
         }
         if (!inBase) {
           enqueueFmt("Detected non-baseline ProbeReq: %s", ev.mac);
@@ -127,23 +132,19 @@ void PrintTask(void*) {
   char outbuf[130];
   static char usbBuf[192];
   const size_t EP = 64;
-
   while (xQueueReceive(printQ, &m, portMAX_DELAY)) {
     size_t len = strnlen(m.buf, sizeof(m.buf));
     memcpy(outbuf, m.buf, len);
     outbuf[len]   = '\r';
     outbuf[len+1] = '\n';
     size_t total = len + 2;
-
     size_t padded = ((total + EP - 1) / EP) * EP;
     if (padded > sizeof(usbBuf)) padded = sizeof(usbBuf);
     memcpy(usbBuf, outbuf, total);
     memset(usbBuf + total, 0, padded - total);
-
     Serial.write((uint8_t*)usbBuf, padded);
     if (total % EP == 0) Serial.write((uint8_t*)"", 0);
     Serial.flush();
-
     if (strncmp(m.buf, DETECT_PREFIX, strlen(DETECT_PREFIX)) == 0) {
       Serial1.write((uint8_t*)outbuf, total);
       Serial1.flush();
@@ -159,26 +160,29 @@ class MyScanCallbacks : public NimBLEScanCallbacks {
     NimBLEAddress addr = dev->getAddress();
     addr.reverseByteOrder();
     const uint8_t* raw = addr.getVal();
-
     char mac[18];
     snprintf(mac, sizeof(mac),
              "%02X:%02X:%02X:%02X:%02X:%02X",
              raw[0], raw[1], raw[2],
              raw[3], raw[4], raw[5]);
-
     bool found = false;
     for (int i = 0; i < bleSeenCount; i++) {
-      if (strcmp(bleSeenArr[i], mac) == 0) { found = true; break; }
+      if (strcmp(bleSeenArr[i], mac) == 0) {
+        found = true;
+        break;
+      }
     }
     if (!found && bleSeenCount < MAX_BLE) {
       strcpy(bleSeenArr[bleSeenCount], mac);
       bleSeenCount++;
       currBLECount = bleSeenCount;
-
       if (!isBaseline) {
         bool inBase = false;
         for (int j = 0; j < baselineBleCount; j++) {
-          if (strcmp(baselineBleArr[j], mac) == 0) { inBase = true; break; }
+          if (strcmp(baselineBleArr[j], mac) == 0) {
+            inBase = true;
+            break;
+          }
         }
         if (!inBase) {
           enqueueFmt("Detected non-baseline BLE: %s", mac);
@@ -191,11 +195,9 @@ class MyScanCallbacks : public NimBLEScanCallbacks {
 void BLETask(void*) {
   bleSeenCount = 0;
   while (true) {
+    // non-blocking scan with auto cleanup
     pBLEScan->start(1000, false, true);
-    pBLEScan->clearResults();
-    // small delay to prevent tight-loop timing issues
-    vTaskDelay(pdMS_TO_TICKS(20));
-
+    vTaskDelay(pdMS_TO_TICKS(20));  // timing compensation
     if (isBaseline && !bleDone && millis() - baselineStart >= BASELINE_MS) {
       baselineBleCount = bleSeenCount;
       for (int i = 0; i < bleSeenCount; i++) {
@@ -223,42 +225,46 @@ void WiFiTask(void*) {
     while ((n = WiFi.scanComplete()) < 0 && millis() < dl) {
       vTaskDelay(pdMS_TO_TICKS(50));
     }
-    if (n > 0) {
-      for (int i = 0; i < n; i++) {
-        const uint8_t* raw = WiFi.BSSID(i);
-        char mac[18];
-        snprintf(mac, sizeof(mac),
-                 "%02X:%02X:%02X:%02X:%02X:%02X",
-                 raw[0], raw[1], raw[2],
-                 raw[3], raw[4], raw[5]);
-
-        bool found = false;
-        for (int j = 0; j < wifiSeenCount; j++) {
-          if (strcmp(wifiSeenArr[j], mac) == 0) { found = true; break; }
-        }
-        if (!found && wifiSeenCount < MAX_WIFI) {
-          strcpy(wifiSeenArr[wifiSeenCount], mac);
-          wifiSeenCount++;
-          currWiFiCount = wifiSeenCount;
-
-          if (!isBaseline) {
-            bool inBase = false;
-            for (int k = 0; k < baselineWifiCount; k++) {
-              if (strcmp(baselineWifiArr[k], mac) == 0) { inBase = true; break; }
+    if (n >= 0) {
+      if (n > 0) {
+        for (int i = 0; i < n; i++) {
+          const uint8_t* raw = WiFi.BSSID(i);
+          char mac[18];
+          snprintf(mac, sizeof(mac),
+                   "%02X:%02X:%02X:%02X:%02X:%02X",
+                   raw[0], raw[1], raw[2],
+                   raw[3], raw[4], raw[5]);
+          bool found = false;
+          for (int j = 0; j < wifiSeenCount; j++) {
+            if (strcmp(wifiSeenArr[j], mac) == 0) {
+              found = true;
+              break;
             }
-            if (!inBase) {
-              enqueueFmt("Detected non-baseline WiFi: %s", mac);
+          }
+          if (!found && wifiSeenCount < MAX_WIFI) {
+            strcpy(wifiSeenArr[wifiSeenCount], mac);
+            wifiSeenCount++;
+            currWiFiCount = wifiSeenCount;
+            if (!isBaseline) {
+              bool inBase = false;
+              for (int k = 0; k < baselineWifiCount; k++) {
+                if (strcmp(baselineWifiArr[k], mac) == 0) {
+                  inBase = true;
+                  break;
+                }
+              }
+              if (!inBase) {
+                enqueueFmt("Detected non-baseline WiFi: %s", mac);
+              }
             }
           }
         }
       }
+      WiFi.scanDelete();
     }
-    WiFi.scanDelete();
     esp_wifi_set_promiscuous(true);
     esp_wifi_set_promiscuous_rx_cb(&snifferCallback);
-    // small delay to prevent tight-loop timing issues
-    vTaskDelay(pdMS_TO_TICKS(20));
-
+    vTaskDelay(pdMS_TO_TICKS(20));  // timing compensation
     if (isBaseline && !wifiDone && millis() - baselineStart >= BASELINE_MS) {
       baselineWifiCount = wifiSeenCount;
       for (int i = 0; i < wifiSeenCount; i++) {
@@ -316,9 +322,9 @@ void setup() {
   printQ = xQueueCreate(20, sizeof(PrintMsg));
   probeQ = xQueueCreate(50, sizeof(ProbeEvent));
 
-  xTaskCreatePinnedToCore(PrintTask,     "PrintTask",   4096, NULL, 2, NULL, 0);
-  xTaskCreatePinnedToCore(ChannelHopTask,"ChHop",       2048, NULL, 1, NULL, 1);
-  xTaskCreatePinnedToCore(ProbeTask,     "ProbeTask",   4096, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(PrintTask, "PrintTask",   4096, NULL, 2, NULL, 0);
+  xTaskCreatePinnedToCore(ChannelHopTask, "ChHop",   2048, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(ProbeTask, "ProbeTask",   4096, NULL, 1, NULL, 1);
 
   enqueueFmt("Deepwoods Device Detection");
   enqueueFmt("5 minute Baseline Scan Started");
@@ -337,9 +343,9 @@ void setup() {
   esp_wifi_set_promiscuous_rx_cb(&snifferCallback);
   esp_wifi_set_ps(WIFI_PS_NONE);
 
-  xTaskCreatePinnedToCore(BLETask,     "BLETask",     8192, NULL, 1, NULL, 1);
-  xTaskCreatePinnedToCore(WiFiTask,    "WiFiTask",    8192, NULL, 1, NULL, 1);
-  xTaskCreatePinnedToCore(StatusTask,  "StatusTask",  4096, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(BLETask, "BLETask",   8192, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(WiFiTask, "WiFiTask", 8192, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(StatusTask, "StatusTask", 4096, NULL, 1, NULL, 1);
 }
 
 void loop() {
