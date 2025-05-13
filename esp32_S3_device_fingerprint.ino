@@ -195,9 +195,12 @@ class MyScanCallbacks : public NimBLEScanCallbacks {
 void BLETask(void*) {
   bleSeenCount = 0;
   while (true) {
-    // non-blocking scan with auto cleanup
+    // Use blocking scan with cleanup flag, discard return value
     pBLEScan->start(1000, false, true);
-    vTaskDelay(pdMS_TO_TICKS(20));  // timing compensation
+    pBLEScan->clearResults();
+    vTaskDelay(pdMS_TO_TICKS(20));
+
+    // Baseline logic unchanged
     if (isBaseline && !bleDone && millis() - baselineStart >= BASELINE_MS) {
       baselineBleCount = bleSeenCount;
       for (int i = 0; i < bleSeenCount; i++) {
@@ -264,7 +267,7 @@ void WiFiTask(void*) {
     }
     esp_wifi_set_promiscuous(true);
     esp_wifi_set_promiscuous_rx_cb(&snifferCallback);
-    vTaskDelay(pdMS_TO_TICKS(20));  // timing compensation
+    vTaskDelay(pdMS_TO_TICKS(20));
     if (isBaseline && !wifiDone && millis() - baselineStart >= BASELINE_MS) {
       baselineWifiCount = wifiSeenCount;
       for (int i = 0; i < wifiSeenCount; i++) {
